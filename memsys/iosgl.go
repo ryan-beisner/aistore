@@ -128,6 +128,10 @@ func (z *SGL) Write(p []byte) (n int, err error) {
 	return len(p), nil
 }
 
+func (z *SGL) WriteString(s string) (n int, err error) {
+	return z.Write([]byte(s))
+}
+
 func (z *SGL) Read(b []byte) (n int, err error) {
 	n, z.roff, err = z.readAtOffset(b, z.roff)
 	return

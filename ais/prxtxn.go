@@ -201,9 +201,7 @@ func (p *proxyrunner) makeNCopies(msg *cmn.ActionMsg, bck *cluster.Bck) (xactID 
 
 	// 5. start waiting for `finished` notifications
 	selfIC, otherIC := p.whichIC(c.smap, c.req.Query)
-	nl := notifListenerBck{
-		notifListenerBase: notifListenerBase{srcs: c.smap.Tmap.Clone(), f: p.nlBckCb}, nlp: &nlp,
-	}
+	nl := notifListenerBck{notifListenerBase: *newNLB(c.smap.Tmap, p.nlBckCb, msg.Action, bck.Bck), nlp: &nlp}
 	if selfIC {
 		p.jtx.addEntry(c.uuid, &nl)
 	}
@@ -317,7 +315,8 @@ func (p *proxyrunner) setBucketProps(msg *cmn.ActionMsg, bck *cluster.Bck,
 	if remirror || reec {
 		c.req.Query.Set(cmn.URLParamNotifyMe, p.si.ID())
 		nl := notifListenerBck{
-			notifListenerBase: notifListenerBase{srcs: c.smap.Tmap.Clone(), f: p.nlBckCb}, nlp: &nlp,
+			notifListenerBase: *newNLB(c.smap.Tmap, p.nlBckCb, msg.Action, bck.Bck),
+			nlp:               &nlp,
 		}
 		p.notifs.add(c.uuid, &nl)
 		unlockUpon = true // unlock upon receiving target notifications
@@ -426,7 +425,7 @@ func (p *proxyrunner) renameBucket(bckFrom, bckTo *cluster.Bck, msg *cmn.ActionM
 			// 5. start waiting for `finished` notifications
 			c.req.Query.Set(cmn.URLParamNotifyMe, p.si.ID())
 			nl := notifListenerFromTo{
-				notifListenerBase: notifListenerBase{srcs: c.smap.Tmap.Clone(), f: p.nlBckFromToCb},
+				notifListenerBase: *newNLB(c.smap.Tmap, p.nlBckFromToCb, msg.Action, bckFrom.Bck, bckTo.Bck),
 				nlpFrom:           &nlpFrom,
 				nlpTo:             &nlpTo,
 			}
@@ -531,7 +530,7 @@ func (p *proxyrunner) copyBucket(bckFrom, bckTo *cluster.Bck, msg *cmn.ActionMsg
 	// 5. start waiting for `finished` notifications
 	c.req.Query.Set(cmn.URLParamNotifyMe, p.si.ID())
 	nl := notifListenerFromTo{
-		notifListenerBase: notifListenerBase{srcs: c.smap.Tmap.Clone(), f: p.nlBckCopy},
+		notifListenerBase: *newNLB(c.smap.Tmap, p.nlBckCopy, msg.Action, bckFrom.Bck, bckTo.Bck),
 		nlpFrom:           &nlpFrom,
 		nlpTo:             &nlpTo,
 	}
@@ -640,9 +639,7 @@ func (p *proxyrunner) ecEncode(bck *cluster.Bck, msg *cmn.ActionMsg) (xactID str
 
 	// 5. start waiting for `finished` notifications
 	c.req.Query.Set(cmn.URLParamNotifyMe, p.si.ID())
-	nl := notifListenerBck{
-		notifListenerBase: notifListenerBase{srcs: c.smap.Tmap.Clone(), f: p.nlBckCb}, nlp: &nlp,
-	}
+	nl := notifListenerBck{notifListenerBase: *newNLB(c.smap.Tmap, p.nlBckCb, msg.Action, bck.Bck), nlp: &nlp}
 	p.jtx.addEntry(c.uuid, &nl)
 
 	// 6. commit

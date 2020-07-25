@@ -24,6 +24,7 @@ import (
 	"github.com/NVIDIA/aistore/3rdparty/glog"
 	"github.com/NVIDIA/aistore/cluster"
 	"github.com/NVIDIA/aistore/cmn"
+	"github.com/NVIDIA/aistore/cmn/hlog"
 	"github.com/NVIDIA/aistore/cmn/jsp"
 	"github.com/NVIDIA/aistore/cmn/mono"
 	"github.com/NVIDIA/aistore/dsort"
@@ -127,10 +128,12 @@ func (p *proxyrunner) Run() error {
 	p.notifs.init(p)
 	p.jtx = newJTX(p)
 
+	if err := hlog.Init(config.Log.Dir); err != nil {
+		return fmt.Errorf("%s: hlog err %w", p.si, err)
+	}
 	//
 	// REST API: register proxy handlers and start listening
 	//
-
 	networkHandlers := []networkHandler{
 		{r: cmn.Reverse, h: p.reverseHandler, net: []string{cmn.NetworkPublic}},
 

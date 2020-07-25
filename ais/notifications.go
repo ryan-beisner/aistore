@@ -15,6 +15,7 @@ import (
 	"github.com/NVIDIA/aistore/3rdparty/glog"
 	"github.com/NVIDIA/aistore/cluster"
 	"github.com/NVIDIA/aistore/cmn"
+	"github.com/NVIDIA/aistore/cmn/hlog"
 	"github.com/NVIDIA/aistore/hk"
 	jsoniter "github.com/json-iterator/go"
 )
@@ -77,14 +78,18 @@ type (
 
 	notifListenerBase struct {
 		sync.RWMutex
-		srcs  cluster.NodeMap  // expected notifiers
-		errs  map[string]error // [node-ID => notifMsg.Err]
-		uuid  string           // UUID
-		f     notifCallback    // actual callback
-		rc    int              // refcount
-		ty    int              // notifMsg.Ty enum (above)
-		tfin  atomic.Int64     // timestamp when finished
-		owned bool             // used to check NL is owned by proxy
+		srcs cluster.NodeMap  // expected notifiers
+		errs map[string]error // [node-ID => notifMsg.Err]
+		uuid string           // UUID
+		f    notifCallback    // actual callback
+		rc   int              // refcount
+		ty   int              // notifMsg.Ty enum (above)
+		tfin atomic.Int64     // timestamp when finished
+		// hlog
+		action string
+		bck    []cmn.Bck
+		// ownership
+		owned bool
 	}
 
 	notifListenerBck struct {
@@ -119,12 +124,16 @@ var (
 	_ cluster.Slistener = &notifs{}
 )
 
+func newNLB(srcs cluster.NodeMap, f notifCallback, action string, bck ...cmn.Bck) *notifListenerBase {
+	return &notifListenerBase{srcs: srcs.Clone(), f: f, action: action, bck: bck}
+}
+
 ///////////////////////
 // notifListenerBase //
 ///////////////////////
 
 // is called after all notifiers will have notified OR on failure (err != nil)
-func (nlb *notifListenerBase) callback(notifs *notifs, n notifListener, msg interface{}, err error, nows ...int64) {
+func (nlb *notifListenerBase) callback(notifs *notifs, nl notifListener, msg interface{}, err error, nows ...int64) {
 	if nlb.tfin.CAS(0, 1) {
 		var now int64
 		if len(nows) > 0 {
@@ -134,12 +143,19 @@ func (nlb *notifListenerBase) callback(notifs *notifs, n notifListener, msg inte
 		}
 		// TODO -- FIXME: cannot be null, must perform async-operation specific cleanup
 		if nlb.f != nil {
-			nlb.f(n, msg, err) // invoke user-supplied callback and pass user-supplied notifListener
+			nlb.f(nl, msg, err) // invoke user-supplied callback and pass user-supplied notifListener
 		}
 		nlb.tfin.Store(now)
 		notifs.fmu.Lock()
-		notifs.fin[n.UUID()] = n
+		notifs.fin[nl.UUID()] = nl
 		notifs.fmu.Unlock()
+
+		hlog.End(struct {
+			UUID string
+			Kind string
+			Err  error
+			Bck  []cmn.Bck
+		}{nl.UUID(), nlb.action, err, nlb.bck}, nows...)
 	}
 }
 func (nlb *notifListenerBase) lock()                      { nlb.Lock() }
@@ -202,12 +218,20 @@ func (n *notifs) String() string { return notifsName }
 
 // start listening
 func (n *notifs) add(uuid string, nl notifListener) {
-	cmn.Assert(uuid != "")
 	n.Lock()
 	n.m[uuid] = nl
 	nl.setUUID(uuid)
 	n.Unlock()
-	glog.Infoln(nl.String())
+
+	// hlog
+	nlb, ok := nl.(*notifListenerBase)
+	if ok { // TODO -- FIXME: not implemented yet
+		hlog.Begin(struct {
+			UUID string
+			Kind string
+			Bck  []cmn.Bck
+		}{uuid, nlb.action, nlb.bck})
+	}
 }
 
 func (n *notifs) del(nl notifListener, locked ...bool) {
