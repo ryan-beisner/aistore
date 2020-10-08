@@ -140,8 +140,9 @@ func (gc *collector) do() {
 				if s.term.err == nil {
 					s.term.err = errors.New(reasonUnknown)
 				}
-				for obj := range s.workCh {
-					s.objDone(&obj, s.term.err)
+				for streamable := range s.workCh {
+					obj := streamable.obj() // TODO -- FIXME
+					s.objDone(obj, s.term.err)
 				}
 				for cmpl := range s.cmplCh {
 					if !cmpl.obj.Hdr.IsLast() {
@@ -178,8 +179,9 @@ func (gc *collector) drain(s *Stream) {
 DrainFor:
 	for {
 		select {
-		case obj := <-s.workCh:
-			s.objDone(&obj, s.term.err)
+		case streamable := <-s.workCh:
+			obj := streamable.obj() // TODO -- FIXME
+			s.objDone(obj, s.term.err)
 		default:
 			break DrainFor
 		}

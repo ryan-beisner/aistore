@@ -50,9 +50,9 @@ const (
 // API types
 type (
 	Stream struct {
-		workCh   chan Obj     // aka SQ: next object to stream
-		cmplCh   chan cmpl    // aka SCQ; note that SQ and SCQ together form a FIFO
-		callback SendCallback // to free SGLs, close files, etc.
+		workCh   chan streamable // aka SQ: next object to stream
+		cmplCh   chan cmpl       // aka SCQ; note that SQ and SCQ together form a FIFO
+		callback SendCallback    // to free SGLs, close files, etc.
 		sendoff  sendoff
 		lz4s     lz4Stream
 		streamBase
@@ -98,6 +98,9 @@ type (
 		// private
 		prc *atomic.Int64 // if present, ref-counts num sent objects to call SendCallback only once
 	}
+	Msg struct {
+		data []byte
+	}
 
 	// object-sent callback that has the following signature can optionally be defined on a:
 	// a) per-stream basis (via NewStream constructor - see Extra struct above)
@@ -114,6 +117,10 @@ type (
 
 // internal types
 type (
+	streamable interface {
+		obj() *Obj
+		msg() *Msg
+	}
 	lz4Stream struct {
 		s             *Stream
 		zw            *lz4.Writer // orig reader => zw
@@ -153,6 +160,11 @@ var (
 	gc      *collector              // real stream collector
 )
 
+// interface guard
+var (
+	_ streamable = &Obj{}
+)
+
 ////////////////////////////
 // Stream: public methods //
 ////////////////////////////
@@ -188,8 +200,8 @@ func NewStream(client Client, toURL string, extra *Extra) (s *Stream) {
 	// burst size: the number of objects the caller is permitted to post for sending
 	// without experiencing any sort of back-pressure
 	burst := burst()
-	s.workCh = make(chan Obj, burst)  // Send Qeueue or SQ
-	s.cmplCh = make(chan cmpl, burst) // Send Completion Queue or SCQ
+	s.workCh = make(chan streamable, burst) // Send Qeueue or SQ
+	s.cmplCh = make(chan cmpl, burst)       // Send Completion Queue or SCQ
 
 	s.wg.Add(2)
 	go s.sendLoop(dryrun()) // handle SQ
@@ -324,8 +336,9 @@ func (s *Stream) sendLoop(dryrun bool) {
 			s.objDone(obj, s.term.err)
 		}
 		// finally, handle pending SQ
-		for obj := range s.workCh {
-			s.objDone(&obj, s.term.err)
+		for streamable := range s.workCh {
+			obj := streamable.obj() // TODO -- FIXME
+			s.objDone(obj, s.term.err)
 		}
 	}
 }
@@ -402,7 +415,8 @@ func (s *Stream) Read(b []byte) (n int, err error) {
 	}
 repeat:
 	select {
-	case s.sendoff.obj = <-s.workCh: // next object OR idle tick
+	case streamable := <-s.workCh: // next object OR idle tick
+		s.sendoff.obj = *streamable.obj() // TODO -- FIXME
 		if s.sendoff.obj.Hdr.IsIdleTick() {
 			if len(s.workCh) > 0 {
 				goto repeat
@@ -501,6 +515,9 @@ exit:
 ////////////////////
 // Obj and Header //
 ////////////////////
+
+func (obj Obj) obj() *Obj { return &obj }
+func (obj Obj) msg() *Msg { return nil }
 
 func (obj *Obj) SetPrc(n int) {
 	// when there's a `sent` callback and more than one destination
