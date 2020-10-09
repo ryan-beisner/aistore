@@ -84,7 +84,7 @@ type (
 		Version    string // version of the object
 	}
 	// object header
-	Header struct {
+	ObjHdr struct {
 		Bck      cmn.Bck
 		ObjName  string
 		ObjAttrs ObjectAttrs // attributes/metadata of the sent object
@@ -92,7 +92,7 @@ type (
 	}
 	// object to transmit
 	Obj struct {
-		Hdr      Header         // object header
+		Hdr      ObjHdr         // object header
 		Reader   io.ReadCloser  // reader, to read the object, and close when done
 		Callback SendCallback   // callback fired when sending is done OR when the stream terminates (see term.reason)
 		CmplPtr  unsafe.Pointer // local pointer that gets returned to the caller via Send completion callback
@@ -106,7 +106,7 @@ type (
 	// Naturally, object callback "overrides" the per-stream one: when object callback is defined
 	// (i.e., non-nil), the stream callback is ignored/skipped.
 	// NOTE: if defined, the callback executes asynchronously as far as the sending part is concerned
-	SendCallback func(Header, io.ReadCloser, unsafe.Pointer, error)
+	SendCallback func(ObjHdr, io.ReadCloser, unsafe.Pointer, error)
 
 	StreamCollector struct {
 		cmn.Named
@@ -247,7 +247,7 @@ func (s *Stream) Send(obj Obj) (err error) {
 }
 
 func (s *Stream) Fin() {
-	_ = s.Send(Obj{Hdr: Header{ObjAttrs: ObjectAttrs{Size: lastMarker}}})
+	_ = s.Send(Obj{Hdr: ObjHdr{ObjAttrs: ObjectAttrs{Size: lastMarker}}})
 	s.wg.Wait()
 }
 
@@ -258,7 +258,7 @@ func (s *Stream) terminate() {
 
 	s.Stop()
 
-	hdr := Header{ObjAttrs: ObjectAttrs{Size: lastMarker}}
+	hdr := ObjHdr{ObjAttrs: ObjectAttrs{Size: lastMarker}}
 	obj := Obj{Hdr: hdr}
 	s.cmplCh <- cmpl{obj, s.term.err}
 	s.term.mu.Unlock()
@@ -500,7 +500,7 @@ exit:
 }
 
 ////////////////////
-// Obj and Header //
+// Obj and ObjHdr //
 ////////////////////
 
 func (obj *Obj) SetPrc(n int) {
@@ -510,11 +510,11 @@ func (obj *Obj) SetPrc(n int) {
 	}
 }
 
-func (hdr *Header) IsLast() bool       { return hdr.ObjAttrs.Size == lastMarker }
-func (hdr *Header) IsIdleTick() bool   { return hdr.ObjAttrs.Size == tickMarker }
-func (hdr *Header) IsHeaderOnly() bool { return hdr.ObjAttrs.Size == 0 || hdr.IsLast() }
+func (hdr *ObjHdr) IsLast() bool       { return hdr.ObjAttrs.Size == lastMarker }
+func (hdr *ObjHdr) IsIdleTick() bool   { return hdr.ObjAttrs.Size == tickMarker }
+func (hdr *ObjHdr) IsHeaderOnly() bool { return hdr.ObjAttrs.Size == 0 || hdr.IsLast() }
 
-func (hdr *Header) FromHdrProvider(meta cmn.ObjHeaderMetaProvider, objName string, bck cmn.Bck, opaque []byte) {
+func (hdr *ObjHdr) FromHdrProvider(meta cmn.ObjHeaderMetaProvider, objName string, bck cmn.Bck, opaque []byte) {
 	hdr.Bck = bck
 	hdr.ObjName = objName
 	hdr.Opaque = opaque
@@ -530,7 +530,7 @@ func (hdr *Header) FromHdrProvider(meta cmn.ObjHeaderMetaProvider, objName strin
 // header serialization //
 //////////////////////////
 
-func (s *Stream) insHeader(hdr Header) (l int) {
+func (s *Stream) insHeader(hdr ObjHdr) (l int) {
 	l = cmn.SizeofI64 * 2
 	l = insString(l, s.maxheader, hdr.Bck.Name)
 	l = insString(l, s.maxheader, hdr.ObjName)

@@ -175,7 +175,7 @@ func (t *targetrunner) SendTo(lom *cluster.LOM, params cluster.SendToParams) err
 // _sendObjDM requires params.HdrMeta not to be nil.
 func _sendObjDM(lom *cluster.LOM, params cluster.SendToParams) error {
 	cmn.Assert(params.HdrMeta != nil)
-	cb := func(_ transport.Header, _ io.ReadCloser, lomptr unsafe.Pointer, err error) {
+	cb := func(_ transport.ObjHdr, _ io.ReadCloser, lomptr unsafe.Pointer, err error) {
 		lom = (*cluster.LOM)(lomptr)
 		if params.Locked {
 			lom.Unlock(false)
@@ -184,7 +184,7 @@ func _sendObjDM(lom *cluster.LOM, params cluster.SendToParams) error {
 			glog.Errorf("failed to send %s => %s @ %s, err: %v", lom, params.BckTo, params.Tsi, err)
 		}
 	}
-	hdr := transport.Header{}
+	hdr := transport.ObjHdr{}
 	hdr.FromHdrProvider(params.HdrMeta, params.ObjNameTo, params.BckTo.Bck, nil)
 	o := transport.Obj{Hdr: hdr, Callback: cb, CmplPtr: unsafe.Pointer(lom)}
 	err := params.DM.Send(o, params.Reader, params.Tsi)
@@ -197,7 +197,7 @@ func _sendObjDM(lom *cluster.LOM, params cluster.SendToParams) error {
 	return err
 }
 
-func (t *targetrunner) _recvObjDM(w http.ResponseWriter, hdr transport.Header, objReader io.Reader, err error) {
+func (t *targetrunner) _recvObjDM(w http.ResponseWriter, hdr transport.ObjHdr, objReader io.Reader, err error) {
 	if err != nil {
 		glog.Error(err)
 		return

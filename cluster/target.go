@@ -64,7 +64,7 @@ type (
 		Close()
 		UnregRecv()
 		Send(obj transport.Obj, roc cmn.ReadOpenCloser, tsi *Snode) error
-		ACK(hdr transport.Header, cb transport.SendCallback, tsi *Snode) error
+		ACK(hdr transport.ObjHdr, cb transport.SendCallback, tsi *Snode) error
 	}
 	PutObjectParams struct {
 		Reader       io.ReadCloser

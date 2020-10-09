@@ -162,7 +162,7 @@ func (gc *collector) do() {
 			continue
 		}
 		if len(s.workCh) == 0 && s.sessST.CAS(active, inactive) {
-			s.workCh <- Obj{Hdr: Header{ObjAttrs: ObjectAttrs{Size: tickMarker}}}
+			s.workCh <- Obj{Hdr: ObjHdr{ObjAttrs: ObjectAttrs{Size: tickMarker}}}
 			if glog.FastV(4, glog.SmoduleTransport) {
 				glog.Infof("%s: active => inactive", s)
 			}
