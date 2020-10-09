@@ -6,14 +6,13 @@
 package transport
 
 import (
-	"fmt"
 	"io"
 	"time"
 	"unsafe"
 
 	"github.com/NVIDIA/aistore/3rdparty/atomic"
-	"github.com/NVIDIA/aistore/3rdparty/glog"
 	"github.com/NVIDIA/aistore/cmn"
+	"github.com/NVIDIA/aistore/cmn/debug"
 	"github.com/NVIDIA/aistore/memsys"
 )
 
@@ -90,25 +89,7 @@ func NewStream(client Client, toURL string, extra *Extra) (s *Stream) {
 	if extra != nil {
 		s.callback = extra.Callback
 		if extra.Compressed() {
-			config := extra.Config
-			if config == nil {
-				config = cmn.GCO.Get()
-			}
-			s.lz4s.s = s
-			s.lz4s.blockMaxSize = config.Compression.BlockMaxSize
-			s.lz4s.frameChecksum = config.Compression.Checksum
-			mem := extra.MMSA
-			if mem == nil {
-				mem = memsys.DefaultPageMM()
-				glog.Warningln("Using global memory manager for streaming inline compression")
-			}
-			if s.lz4s.blockMaxSize >= memsys.MaxPageSlabSize {
-				s.lz4s.sgl = mem.NewSGL(memsys.MaxPageSlabSize, memsys.MaxPageSlabSize)
-			} else {
-				s.lz4s.sgl = mem.NewSGL(cmn.KiB*64, cmn.KiB*64)
-			}
-
-			s.lid = fmt.Sprintf("%s[%d[%s]]", s.trname, s.sessID, cmn.B2S(int64(s.lz4s.blockMaxSize), 0))
+			s.initCompression(extra)
 		}
 	}
 
@@ -146,29 +127,14 @@ func NewStream(client Client, toURL string, extra *Extra) (s *Stream) {
 //   network errors that may cause sudden and instant termination of the underlying
 //   stream(s).
 func (s *Stream) Send(obj Obj) (err error) {
-	s.time.inSend.Store(true) // an indication for Collector to postpone cleanup
-	hdr := &obj.Hdr
-	if s.Terminated() {
-		err = fmt.Errorf("%s terminated(%s, %v), cannot send [%s/%s(%d)]",
-			s, *s.term.reason, s.term.err, hdr.Bck, hdr.ObjName, hdr.ObjAttrs.Size)
-		glog.Errorln(err)
+	if err = s.startSend(&obj.Hdr); err != nil {
 		return
 	}
-	if s.sessST.CAS(inactive, active) {
-		s.postCh <- struct{}{}
-		if glog.FastV(4, glog.SmoduleTransport) {
-			glog.Infof("%s: inactive => active", s)
-		}
-	}
-	// next object => SQ
 	if obj.Reader == nil {
-		cmn.Assert(hdr.IsHeaderOnly())
+		debug.Assert(obj.Hdr.IsHeaderOnly())
 		obj.Reader = nopRC
 	}
 	s.workCh <- obj
-	if glog.FastV(4, glog.SmoduleTransport) {
-		glog.Infof("%s: send %s/%s(%d)[sq=%d]", s, hdr.Bck, hdr.ObjName, hdr.ObjAttrs.Size, len(s.workCh))
-	}
 	return
 }
 

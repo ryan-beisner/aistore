@@ -97,9 +97,25 @@ var (
 	_ streamable = &Obj{}
 )
 
-////////////////////////////
-// Stream: public methods //
-////////////////////////////
+/////////////////////////////
+// Stream: private methods //
+/////////////////////////////
+
+func (s *Stream) startSend(hdr *ObjHdr) (err error) {
+	s.time.inSend.Store(true) // an indication for Collector to postpone cleanup
+	if s.Terminated() {
+		err = fmt.Errorf("%s terminated(%s, %v), dropping %s/%s", s, *s.term.reason, s.term.err, hdr.Bck, hdr.ObjName)
+		glog.Errorln(err)
+		return
+	}
+	if s.sessST.CAS(inactive, active) {
+		s.postCh <- struct{}{}
+		if glog.FastV(4, glog.SmoduleTransport) {
+			glog.Infof("%s: inactive => active", s)
+		}
+	}
+	return
+}
 
 func (s *Stream) terminate() {
 	s.term.mu.Lock()
@@ -126,9 +142,27 @@ func (s *Stream) terminate() {
 	}
 }
 
-//
-// internal methods including sending and receiving-completions logic, each running in its own goroutine
-//
+func (s *Stream) initCompression(extra *Extra) {
+	config := extra.Config
+	if config == nil {
+		config = cmn.GCO.Get()
+	}
+	s.lz4s.s = s
+	s.lz4s.blockMaxSize = config.Compression.BlockMaxSize
+	s.lz4s.frameChecksum = config.Compression.Checksum
+	mem := extra.MMSA
+	if mem == nil {
+		mem = memsys.DefaultPageMM()
+		glog.Warningln("Using global memory manager for streaming inline compression")
+	}
+	if s.lz4s.blockMaxSize >= memsys.MaxPageSlabSize {
+		s.lz4s.sgl = mem.NewSGL(memsys.MaxPageSlabSize, memsys.MaxPageSlabSize)
+	} else {
+		s.lz4s.sgl = mem.NewSGL(cmn.KiB*64, cmn.KiB*64)
+	}
+
+	s.lid = fmt.Sprintf("%s[%d[%s]]", s.trname, s.sessID, cmn.B2S(int64(s.lz4s.blockMaxSize), 0))
+}
 
 func (s *Stream) compressed() bool { return s.lz4s.s == s }
 
