@@ -51,9 +51,9 @@ const (
 // API types
 type (
 	Stream struct {
-		workCh   chan Obj     // aka SQ: next object to stream
-		cmplCh   chan cmpl    // aka SCQ; note that SQ and SCQ together form a FIFO
-		callback SendCallback // to free SGLs, close files, etc.
+		workCh   chan streamable // aka SQ: next object to stream
+		cmplCh   chan cmpl       // aka SCQ; note that SQ and SCQ together form a FIFO
+		callback ObjSentCB       // to free SGLs, close files, etc.
 		sendoff  sendoff
 		lz4s     lz4Stream
 		streamBase
@@ -61,7 +61,7 @@ type (
 	// advanced usage: additional stream control
 	Extra struct {
 		IdleTimeout time.Duration // stream idle timeout: causes PUT to terminate (and renew on the next obj send)
-		Callback    SendCallback  // typical usage: to free SGLs, close files, etc.
+		Callback    ObjSentCB     // typical usage: to free SGLs, close files, etc.
 		Compression string        // see CompressAlways, etc. enum
 		MMSA        *memsys.MMSA  // compression-related buffering
 		Config      *cmn.Config
@@ -94,10 +94,13 @@ type (
 	Obj struct {
 		Hdr      ObjHdr         // object header
 		Reader   io.ReadCloser  // reader, to read the object, and close when done
-		Callback SendCallback   // callback fired when sending is done OR when the stream terminates (see term.reason)
+		Callback ObjSentCB      // callback fired when sending is done OR when the stream terminates (see term.reason)
 		CmplPtr  unsafe.Pointer // local pointer that gets returned to the caller via Send completion callback
 		// private
 		prc *atomic.Int64 // if present, ref-counts num sent objects to call SendCallback only once
+	}
+	Msg struct {
+		Body []byte
 	}
 
 	// object-sent callback that has the following signature can optionally be defined on a:
@@ -106,7 +109,7 @@ type (
 	// Naturally, object callback "overrides" the per-stream one: when object callback is defined
 	// (i.e., non-nil), the stream callback is ignored/skipped.
 	// NOTE: if defined, the callback executes asynchronously as far as the sending part is concerned
-	SendCallback func(ObjHdr, io.ReadCloser, unsafe.Pointer, error)
+	ObjSentCB func(ObjHdr, io.ReadCloser, unsafe.Pointer, error)
 
 	StreamCollector struct {
 		cmn.Named
@@ -115,6 +118,10 @@ type (
 
 // internal types
 type (
+	streamable interface {
+		obj() *Obj
+		msg() *Msg
+	}
 	lz4Stream struct {
 		s             *Stream
 		zw            *lz4.Writer // orig reader => zw
@@ -154,6 +161,11 @@ var (
 	gc      *collector              // real stream collector
 )
 
+// interface guard
+var (
+	_ streamable = &Obj{}
+)
+
 ////////////////////////////
 // Stream: public methods //
 ////////////////////////////
@@ -189,8 +201,8 @@ func NewStream(client Client, toURL string, extra *Extra) (s *Stream) {
 	// burst size: the number of objects the caller is permitted to post for sending
 	// without experiencing any sort of back-pressure
 	burst := burst()
-	s.workCh = make(chan Obj, burst)  // Send Qeueue or SQ
-	s.cmplCh = make(chan cmpl, burst) // Send Completion Queue or SCQ
+	s.workCh = make(chan streamable, burst) // Send Qeueue or SQ
+	s.cmplCh = make(chan cmpl, burst)       // Send Completion Queue or SCQ
 
 	s.wg.Add(2)
 	go s.sendLoop(dryrun()) // handle SQ
@@ -319,8 +331,9 @@ func (s *Stream) sendLoop(dryrun bool) {
 			s.objDone(obj, s.term.err)
 		}
 		// finally, handle pending SQ
-		for obj := range s.workCh {
-			s.objDone(&obj, s.term.err)
+		for streamable := range s.workCh {
+			obj := streamable.obj() // TODO -- FIXME
+			s.objDone(obj, s.term.err)
 		}
 	}
 }
@@ -396,14 +409,14 @@ func (s *Stream) Read(b []byte) (n int, err error) {
 		}
 	}
 repeat:
-	var ok bool
 	select {
-	case s.sendoff.obj, ok = <-s.workCh: // next object OR idle tick
+	case streamable, ok := <-s.workCh: // next object OR idle tick
 		if !ok {
 			err = fmt.Errorf("%s closed prior to stopping", s)
 			debug.Infof("%v", err)
 			return
 		}
+		s.sendoff.obj = *streamable.obj() // TODO -- FIXME
 		if s.sendoff.obj.Hdr.IsIdleTick() {
 			if len(s.workCh) > 0 {
 				goto repeat
@@ -503,6 +516,9 @@ exit:
 // Obj and ObjHdr //
 ////////////////////
 
+func (obj Obj) obj() *Obj { return &obj }
+func (obj Obj) msg() *Msg { return nil }
+
 func (obj *Obj) SetPrc(n int) {
 	// when there's a `sent` callback and more than one destination
 	if n > 1 {
@@ -525,6 +541,13 @@ func (hdr *ObjHdr) FromHdrProvider(meta cmn.ObjHeaderMetaProvider, objName strin
 	}
 	hdr.ObjAttrs.Version = meta.Version()
 }
+
+/////////
+// Msg //
+/////////
+
+func (msg Msg) obj() *Obj { return nil }
+func (msg Msg) msg() *Msg { return &msg }
 
 //////////////////////////
 // header serialization //

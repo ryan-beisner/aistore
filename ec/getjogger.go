@@ -667,7 +667,7 @@ func (c *getJogger) uploadRestoredSlices(req *Request, meta *Metadata, slices []
 		}
 
 		// every slice's SGL must be freed upon transfer completion
-		cb := func(daemonID string, s *slice) transport.SendCallback {
+		cb := func(daemonID string, s *slice) transport.ObjSentCB {
 			return func(hdr transport.ObjHdr, reader io.ReadCloser, _ unsafe.Pointer, err error) {
 				if err != nil {
 					glog.Errorf("%s failed to send %s/%s to %v: %v", c.parent.t.Snode(), req.LOM.Bck(), req.LOM.ObjName, daemonID, err)

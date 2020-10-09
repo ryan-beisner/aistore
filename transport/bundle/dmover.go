@@ -170,7 +170,7 @@ func (dm *DataMover) Send(obj transport.Obj, roc cmn.ReadOpenCloser, tsi *cluste
 	return dm.data.streams.Send(obj, roc, tsi)
 }
 
-func (dm *DataMover) ACK(hdr transport.ObjHdr, cb transport.SendCallback, tsi *cluster.Snode) error {
+func (dm *DataMover) ACK(hdr transport.ObjHdr, cb transport.ObjSentCB, tsi *cluster.Snode) error {
 	return dm.ack.streams.Send(transport.Obj{Hdr: hdr, Callback: cb}, nil, tsi)
 }
 

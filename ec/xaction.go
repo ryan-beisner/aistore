@@ -240,7 +240,7 @@ func (r *xactECBase) dataResponse(act intraReqType, fqn string, bck *cluster.Bck
 //			in this case)
 //	    - false - send a slice/replica/metadata to targets
 func (r *xactECBase) sendByDaemonID(daemonIDs []string, hdr transport.ObjHdr,
-	reader cmn.ReadOpenCloser, cb transport.SendCallback, isRequest bool) error {
+	reader cmn.ReadOpenCloser, cb transport.ObjSentCB, isRequest bool) error {
 	nodes := make([]*cluster.Snode, 0, len(daemonIDs))
 	smap := r.smap.Get()
 	for _, id := range daemonIDs {
@@ -350,7 +350,7 @@ func (r *xactECBase) unregWriter(uname string) {
 //      The counter is used for sending slices of one big SGL to a few nodes. In
 //		this case every slice must be sent to only one target, and transport bundle
 //		cannot help to track automatically when SGL should be freed.
-func (r *xactECBase) writeRemote(daemonIDs []string, lom *cluster.LOM, src *dataSource, cb transport.SendCallback) error {
+func (r *xactECBase) writeRemote(daemonIDs []string, lom *cluster.LOM, src *dataSource, cb transport.ObjSentCB) error {
 	if src.metadata != nil && src.metadata.ObjVersion == "" {
 		src.metadata.ObjVersion = lom.Version()
 	}
