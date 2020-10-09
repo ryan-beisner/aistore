@@ -384,9 +384,9 @@ func (mgr *Manager) BucketsMDChanged() {
 	mgr.Unlock()
 
 	if newBckMD.IsECUsed() && !oldBckMD.IsECUsed() {
-		// init EC streams if there were not initialized at startup;
-		// no need to close them when the last EC bucket is disabled
-		// as they timeout (when idle) and auto-close.
+		// init EC streams if they were not initialized at startup;
+		// no need to close when the last EC bucket is disabled -
+		// streams timeout (when idle) and auto-close.
 		mgr.initECBundles()
 	} else if !newBckMD.IsECUsed() && oldBckMD.IsECUsed() {
 		mgr.closeECBundles()
