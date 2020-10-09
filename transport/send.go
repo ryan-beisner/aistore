@@ -104,7 +104,7 @@ var (
 func (s *Stream) startSend(hdr *ObjHdr) (err error) {
 	s.time.inSend.Store(true) // an indication for Collector to postpone cleanup
 	if s.Terminated() {
-		err = fmt.Errorf("%s terminated(%s, %v), dropping %s/%s", s, *s.term.reason, s.term.err, hdr.Bck, hdr.ObjName)
+		err = fmt.Errorf("%s terminated(%s, %v), dropping %s", s, *s.term.reason, s.term.err, hdr)
 		glog.Errorln(err)
 		return
 	}
@@ -358,21 +358,21 @@ func (s *Stream) sendData(b []byte) (n int, err error) {
 //
 func (s *Stream) eoObj(err error) {
 	obj := &s.sendoff.obj
+	hdr := &obj.Hdr
 	s.Sizecur += s.sendoff.off
 	s.stats.Offset.Add(s.sendoff.off)
 	if err != nil {
 		goto exit
 	}
-	if s.sendoff.off != obj.Hdr.ObjAttrs.Size {
-		err = fmt.Errorf("%s: obj %s/%s offset %d != %d size",
-			s, s.sendoff.obj.Hdr.Bck, s.sendoff.obj.Hdr.ObjName, s.sendoff.off, obj.Hdr.ObjAttrs.Size)
+	if s.sendoff.off != hdr.ObjAttrs.Size {
+		err = fmt.Errorf("%s: %s offset %d != size", s, hdr, s.sendoff.off)
 		goto exit
 	}
-	s.stats.Size.Add(obj.Hdr.ObjAttrs.Size)
+	s.stats.Size.Add(hdr.ObjAttrs.Size)
 	s.Numcur++
 	s.stats.Num.Inc()
 	if glog.FastV(4, glog.SmoduleTransport) {
-		glog.Infof("%s: sent size=%d (%d/%d): %s", s, obj.Hdr.ObjAttrs.Size, s.Numcur, s.stats.Num.Load(), obj.Hdr.ObjName)
+		glog.Infof("%s: sent %s (%d/%d)", s, hdr, s.Numcur, s.stats.Num.Load())
 	}
 exit:
 	if err != nil {
@@ -412,6 +412,13 @@ func (hdr *ObjHdr) FromHdrProvider(meta cmn.ObjHeaderMetaProvider, objName strin
 		hdr.ObjAttrs.CksumType, hdr.ObjAttrs.CksumValue = meta.Cksum().Get()
 	}
 	hdr.ObjAttrs.Version = meta.Version()
+}
+
+func (hdr *ObjHdr) String() string {
+	if hdr.IsHeaderOnly() {
+		return fmt.Sprintf("hdr %s/%s", hdr.Bck, hdr.ObjName)
+	}
+	return fmt.Sprintf("obj %s/%s(size=%d)", hdr.Bck, hdr.ObjName, hdr.ObjAttrs.Size)
 }
 
 /////////
