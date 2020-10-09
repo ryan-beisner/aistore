@@ -101,7 +101,7 @@ var (
 // Stream: private methods //
 /////////////////////////////
 
-func (s *Stream) startSend(hdr *ObjHdr) (err error) {
+func (s *Stream) startSend(hdr fmt.Stringer) (err error) {
 	s.time.inSend.Store(true) // an indication for Collector to postpone cleanup
 	if s.Terminated() {
 		err = fmt.Errorf("%s terminated(%s, %v), dropping %s", s, *s.term.reason, s.term.err, hdr)
@@ -421,12 +421,14 @@ func (hdr *ObjHdr) String() string {
 	return fmt.Sprintf("obj %s/%s(size=%d)", hdr.Bck, hdr.ObjName, hdr.ObjAttrs.Size)
 }
 
-/////////
-// Msg //
-/////////
+////////////////////
+// Msg and MsgHdr //
+////////////////////
 
 func (msg Msg) obj() *Obj { return nil }
 func (msg Msg) msg() *Msg { return &msg }
+
+func (hdr *MsgHdr) String() string { return hdr.RecvHandler }
 
 //////////////////////////
 // header serialization //

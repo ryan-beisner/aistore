@@ -66,7 +66,12 @@ type (
 		// private
 		prc *atomic.Int64 // if present, ref-counts num sent objects to call SendCallback only once
 	}
+	MsgHdr struct {
+		RecvHandler string
+		KVS         cmn.SimpleKVs
+	}
 	Msg struct {
+		Hdr  MsgHdr
 		Body []byte
 	}
 
@@ -135,6 +140,14 @@ func (s *Stream) Send(obj Obj) (err error) {
 		obj.Reader = nopRC
 	}
 	s.workCh <- obj
+	return
+}
+
+func (s *Stream) SendMsg(msg Msg) (err error) {
+	if err = s.startSend(&msg.Hdr); err != nil {
+		return
+	}
+	s.workCh <- msg
 	return
 }
 
